@@ -8,6 +8,7 @@ import {
 import useVitalsStore from '../store/useVitalsStore'
 import { API_BASE } from '../config'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useLocalInference } from '../hooks/useLocalInference'
 import WebcamCapture from '../components/WebcamCapture'
 import BVPWaveform from '../components/BVPWaveform'
 import VitalsPanel from '../components/VitalsPanel'
@@ -101,21 +102,25 @@ function HRZoneBadge({ hr, hrZones }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function MonitorPage() {
   const navigate     = useNavigate()
-  const isActive     = useVitalsStore(s => s.session.isActive)
-  const startTime    = useVitalsStore(s => s.session.startTime)
-  const endSession   = useVitalsStore(s => s.endSession)
-  const startSession = useVitalsStore(s => s.startSession)
-  const wsConnected  = useVitalsStore(s => s.wsConnected)
-  const faceBbox     = useVitalsStore(s => s.vitals.faceBbox)
-  const hr           = useVitalsStore(s => s.vitals.hr)
-  const hrZones      = useVitalsStore(s => s.hrZones)
-  const setHrZones   = useVitalsStore(s => s.setHrZones)
+  const isActive      = useVitalsStore(s => s.session.isActive)
+  const startTime     = useVitalsStore(s => s.session.startTime)
+  const endSession    = useVitalsStore(s => s.endSession)
+  const startSession  = useVitalsStore(s => s.startSession)
+  const wsConnected   = useVitalsStore(s => s.wsConnected)
+  const faceBbox      = useVitalsStore(s => s.vitals.faceBbox)
+  const hr            = useVitalsStore(s => s.vitals.hr)
+  const hrZones       = useVitalsStore(s => s.hrZones)
+  const setHrZones    = useVitalsStore(s => s.setHrZones)
+  const inferenceMode = useVitalsStore(s => s.inferenceMode)
+
+  const videoRef = React.useRef(null)
 
   useEffect(() => {
     if (!isActive) startSession()
   }, []) // eslint-disable-line
 
-  useWebSocket(true)
+  useWebSocket(inferenceMode === 'remote')
+  useLocalInference(videoRef, inferenceMode === 'local')
 
   // One-shot age estimation: fires once on first valid face bbox
   const ageCalledRef = React.useRef(false)
@@ -223,7 +228,7 @@ export default function MonitorPage() {
 
         {/* Left col: camera feed + BVP waveform */}
         <div className="flex flex-col gap-4">
-          <WebcamCapture isRecording={isActive} />
+          <WebcamCapture isRecording={isActive} videoRef={videoRef} inferenceMode={inferenceMode} />
           <BVPWaveform autoScale />
         </div>
 

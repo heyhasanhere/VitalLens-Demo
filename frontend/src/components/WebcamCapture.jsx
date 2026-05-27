@@ -3,6 +3,24 @@ import { Check, AlertTriangle, RotateCw } from 'lucide-react'
 import useVitalsStore from '../store/useVitalsStore'
 import { API_BASE } from '../config'
 
+function useUserMedia(videoRef, active) {
+  React.useEffect(() => {
+    if (!active) return
+    let stream = null
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+      .then(s => {
+        stream = s
+        if (videoRef.current) {
+          videoRef.current.srcObject = s
+        }
+      })
+      .catch(err => console.error('[WebcamCapture] getUserMedia failed:', err))
+    return () => {
+      if (stream) stream.getTracks().forEach(t => t.stop())
+    }
+  }, [active]) // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 // Lighting badge config
 const lightingConfig = {
   Good:  { label: 'Good',  color: 'rgba(16,185,129,0.85)', dot: '#6ee7b7' },
@@ -10,13 +28,16 @@ const lightingConfig = {
   Poor:  { label: 'Poor',  color: 'rgba(239,68,68,0.85)',   dot: '#fca5a5' },
 }
 
-export default function WebcamCapture({ isRecording }) {
+export default function WebcamCapture({ isRecording, videoRef, inferenceMode }) {
 
   const lighting     = useVitalsStore(s => s.vitals.lighting)    || 'Good'
   const faceDetected = useVitalsStore(s => s.vitals.faceDetected)
   const lumStd       = useVitalsStore(s => s.vitals.lumStd)
   const faceBbox     = useVitalsStore(s => s.vitals.faceBbox)
   const cameraUrl    = useVitalsStore(s => s.cameraUrl)   // non-empty = MJPEG stream
+
+  const isLocal = inferenceMode === 'local'
+  useUserMedia(videoRef, isLocal)
 
   const [rotation, setRotation] = React.useState(0)
   const cycleRotation = () => setRotation(r => (r + 90) % 360)
@@ -61,19 +82,36 @@ export default function WebcamCapture({ isRecording }) {
     <div className="relative w-full aspect-video rounded-2xl overflow-hidden"
          style={{ background: '#0a0f1e', border: '1px solid rgba(255,255,255,0.1)' }}>
 
-      {/* ── Camera feed — always served from backend to avoid device conflicts */}
-      <img
-        src={`${API_BASE}/video_feed`}
-        alt="camera feed"
-        className="w-full h-full object-cover"
-        style={{
-          display: 'block',
-          transform: [
-            rotation ? `rotate(${rotation}deg)` : '',
-            !cameraUrl ? 'scaleX(-1)' : '',
-          ].filter(Boolean).join(' ') || 'none',
-        }}
-      />
+      {/* ── Camera feed ─────────────────────────────────────────────────── */}
+      {isLocal ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          className="w-full h-full object-cover"
+          style={{
+            display: 'block',
+            transform: [
+              rotation ? `rotate(${rotation}deg)` : '',
+              'scaleX(-1)',
+            ].filter(Boolean).join(' '),
+          }}
+        />
+      ) : (
+        <img
+          src={`${API_BASE}/video_feed`}
+          alt="camera feed"
+          className="w-full h-full object-cover"
+          style={{
+            display: 'block',
+            transform: [
+              rotation ? `rotate(${rotation}deg)` : '',
+              !cameraUrl ? 'scaleX(-1)' : '',
+            ].filter(Boolean).join(' ') || 'none',
+          }}
+        />
+      )}
 
       {/* ── Face bounding box overlay (SVG) ─────────────────────────────── */}
       {faceDetected && (

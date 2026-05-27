@@ -8,6 +8,7 @@ import {
 import useVitalsStore from '../store/useVitalsStore'
 import { API_BASE } from '../config'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useLocalInference } from '../hooks/useLocalInference'
 import WebcamCapture from '../components/WebcamCapture'
 import BVPWaveform from '../components/BVPWaveform'
 import VitalsPanel from '../components/VitalsPanel'
@@ -109,21 +110,27 @@ export default function MonitorPage() {
   const faceBbox     = useVitalsStore(s => s.vitals.faceBbox)
   const hr           = useVitalsStore(s => s.vitals.hr)
   const hrZones      = useVitalsStore(s => s.hrZones)
-  const setHrZones   = useVitalsStore(s => s.setHrZones)
+  const setHrZones    = useVitalsStore(s => s.setHrZones)
+  const inferenceMode = useVitalsStore(s => s.inferenceMode)
+
+  // Shared video ref — passed to WebcamCapture and useLocalInference
+  const videoRef = React.useRef(null)
 
   useEffect(() => {
     if (!isActive) startSession()
   }, []) // eslint-disable-line
 
-  useWebSocket(true)
+  const isRemote = inferenceMode === 'remote'
+  const { sendFrame } = useWebSocket(isRemote)
+  useLocalInference(videoRef, !isRemote)
 
-  // One-shot age estimation: fires once on first valid face bbox
+  // One-shot age estimation (remote mode only — needs backend)
   const ageCalledRef = React.useRef(false)
   useEffect(() => {
-    if (!faceBbox || hrZones || ageCalledRef.current) return
-    const video = document.querySelector('video')
+    if (!isRemote || !faceBbox || hrZones || ageCalledRef.current) return
+    const video = videoRef.current
     if (!video || !video.videoWidth) return
-    ageCalledRef.current = true   // prevent duplicate calls while fetch is in flight
+    ageCalledRef.current = true
     try {
       const canvas = document.createElement('canvas')
       canvas.width = 160; canvas.height = 160
@@ -141,7 +148,7 @@ export default function MonitorPage() {
       })
         .then(r => r.json())
         .then(data => { if (data.hr_zones) setHrZones(data) })
-        .catch(() => { ageCalledRef.current = false })  // allow retry on network error
+        .catch(() => { ageCalledRef.current = false })
     } catch { ageCalledRef.current = false }
   }, [faceBbox]) // eslint-disable-line
 
@@ -223,7 +230,7 @@ export default function MonitorPage() {
 
         {/* Left col: camera feed + BVP waveform */}
         <div className="flex flex-col gap-4">
-          <WebcamCapture isRecording={isActive} />
+          <WebcamCapture isRecording={isActive} sendFrame={isRemote ? sendFrame : null} videoRef={videoRef} />
           <BVPWaveform autoScale />
         </div>
 

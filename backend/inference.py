@@ -414,12 +414,14 @@ class VitalsEngine:
         brightness_norm: bool  = True,
         target_fps:      float = 30.0,
         lock_exposure:   float | None = None,  # e.g. -6.0; None = leave auto
+        model:           str | None = None,    # 'factorizephys' | 'efficientphys'
     ):
         self.camera_index    = camera_index
         self.camera_url      = camera_url
         self.brightness_norm = brightness_norm
         self.target_fps      = target_fps
         self.lock_exposure   = lock_exposure
+        self._model_override = model
 
         # ONNX sessions
         self._rppg_sess        = None
@@ -437,9 +439,9 @@ class VitalsEngine:
             ),
             running_mode=mp_vision.RunningMode.VIDEO,
             num_faces=1,
-            min_face_detection_confidence=0.3,
-            min_face_presence_confidence=0.3,
-            min_tracking_confidence=0.3,
+            min_face_detection_confidence=0.7,
+            min_face_presence_confidence=0.7,
+            min_tracking_confidence=0.7,
         )
         self._face_landmarker = mp_vision.FaceLandmarker.create_from_options(_fl_options)
         self._mp_timestamp_ms = 0   # monotonically increasing, required by VIDEO mode
@@ -497,6 +499,9 @@ class VitalsEngine:
         self._running  = False
         self._thread   : threading.Thread | None = None
 
+        # Browser-streaming mode: serialise push_frame calls
+        self._push_lock = threading.Lock()
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -506,6 +511,34 @@ class VitalsEngine:
         self._running = True
         self._thread  = threading.Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
+
+    def start_browser_mode(self) -> None:
+        """Load models and mark running. Frames are fed externally via push_frame()."""
+        self._load_models()
+        self._running = True
+        self._fps_t0  = time.time()
+
+    def push_frame(self, jpeg_bytes: bytes) -> None:
+        """Process one JPEG frame from the browser. Drops frame if still processing previous."""
+        if not self._running:
+            return
+        if not self._push_lock.acquire(blocking=False):
+            return
+        try:
+            arr   = np.frombuffer(jpeg_bytes, np.uint8)
+            frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if frame is None:
+                return
+            if not self._fps_calibrated:
+                self._fps_frame_count += 1
+                if self._fps_frame_count >= 90:
+                    elapsed = time.time() - self._fps_t0
+                    self.target_fps = round(self._fps_frame_count / elapsed, 2)
+                    self._fps_calibrated = True
+                    print(f"Browser stream fps: {self.target_fps:.1f} Hz")
+            self._process_frame(frame)
+        finally:
+            self._push_lock.release()
 
     def stop(self) -> None:
         self._running = False
@@ -522,9 +555,14 @@ class VitalsEngine:
 
     def _load_models(self) -> None:
         providers = ["CPUExecutionProvider"]
-        if not RPPG_PATH.exists():
-            raise FileNotFoundError(f"rPPG ONNX not found: {RPPG_PATH}")
-        self._rppg_sess  = ort.InferenceSession(str(RPPG_PATH), providers=providers)
+        _MODELS = {
+            'factorizephys': _W / 'factorizephys.onnx',
+            'efficientphys': _W / 'vitallens_rppg.onnx',
+        }
+        rppg_path = _MODELS.get(self._model_override, RPPG_PATH) if self._model_override else RPPG_PATH
+        if not rppg_path.exists():
+            raise FileNotFoundError(f"rPPG ONNX not found: {rppg_path}")
+        self._rppg_sess  = ort.InferenceSession(str(rppg_path), providers=providers)
         self._rppg_input = self._rppg_sess.get_inputs()[0].name
 
         # Auto-detect model type from ONNX input shape:
@@ -923,22 +961,23 @@ class VitalsEngine:
         lum_buf = list(self._lum_buf)
         lum_std = round(float(np.std(lum_buf)), 2) if len(lum_buf) >= 10 else None
         with self._lock:
+            fd = self._face_detected
             return {
-                "hr":            self._hr,
-                "br":            self._br,
-                "hrv":           self._hrv,
-                "stress":        self._stress,
-                "snr":           self._snr,
-                "pos_hr":        self._pos_hr,
-                "chrom_hr":      self._chrom_hr,
-                "bvp":           list(self._bvp_window),
+                "hr":            self._hr  if fd else None,
+                "br":            self._br  if fd else None,
+                "hrv":           self._hrv if fd else None,
+                "stress":        self._stress   if fd else None,
+                "snr":           self._snr      if fd else None,
+                "pos_hr":        self._pos_hr   if fd else None,
+                "chrom_hr":      self._chrom_hr if fd else None,
+                "bvp":           list(self._bvp_window) if fd else [],
                 "lighting":      self._lighting,
-                "face_detected": self._face_detected,
+                "face_detected": fd,
                 "face_bbox":     self._face_bbox,
                 "timestamp":     time.time(),
                 "ready":         self._ready,
                 "lum_std":       lum_std,
-                "blink_rate":    self._blink_rate,
-                "sway":          self._sway,
-                "rhythm":        self._rhythm,
+                "blink_rate":    self._blink_rate if fd else None,
+                "sway":          self._sway   if fd else None,
+                "rhythm":        self._rhythm if fd else "Unknown",
             }

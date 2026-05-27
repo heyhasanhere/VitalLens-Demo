@@ -1,6 +1,6 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Camera, Heart, Brain, Lock, Wind, Activity, Gauge, Smartphone, Play } from 'lucide-react'
+import { Camera, Heart, Brain, Lock, Wind, Activity, Gauge, Smartphone, Play, Server, Cpu } from 'lucide-react'
 import useVitalsStore from '../store/useVitalsStore'
 import { API_BASE } from '../config'
 
@@ -25,8 +25,12 @@ export default function HomePage() {
   const startSession    = useVitalsStore(s => s.startSession)
   const cameraIndex     = useVitalsStore(s => s.cameraIndex)
   const setCameraIndex  = useVitalsStore(s => s.setCameraIndex)  // for manual picker
-  const cameraUrl       = useVitalsStore(s => s.cameraUrl)
-  const setCameraUrl    = useVitalsStore(s => s.setCameraUrl)
+  const cameraUrl        = useVitalsStore(s => s.cameraUrl)
+  const setCameraUrl     = useVitalsStore(s => s.setCameraUrl)
+  const inferenceMode    = useVitalsStore(s => s.inferenceMode)
+  const setInferenceMode = useVitalsStore(s => s.setInferenceMode)
+  const selectedModel    = useVitalsStore(s => s.selectedModel)
+  const setSelectedModel = useVitalsStore(s => s.setSelectedModel)
   const [cameras, setCameras] = React.useState([])
 
   // Display value is IP:port without the http:// prefix and /video suffix
@@ -102,8 +106,59 @@ export default function HomePage() {
           Sit in front of your camera and let AI do the rest.
         </p>
 
+        {/* ── Inference mode selector ─────────────────────────────────── */}
+        <div className="flex items-center gap-2 mb-4 p-1 rounded-xl"
+             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          {[
+            { mode: 'local',  icon: <Cpu size={13} />,    label: 'On-Device',  desc: 'Runs entirely in your browser — no server needed' },
+            { mode: 'remote', icon: <Server size={13} />, label: 'Backend',    desc: 'Uses a Python backend server for inference' },
+          ].map(({ mode, icon, label, desc }) => {
+            const active = inferenceMode === mode
+            return (
+              <button
+                key={mode}
+                onClick={() => setInferenceMode(mode)}
+                title={desc}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs font-semibold transition-all duration-200"
+                style={{
+                  background: active ? 'linear-gradient(135deg, rgba(6,182,212,0.2), rgba(129,140,248,0.2))' : 'transparent',
+                  border: active ? '1px solid rgba(6,182,212,0.4)' : '1px solid transparent',
+                  color: active ? '#e0f2fe' : 'rgba(255,255,255,0.35)',
+                }}
+              >
+                {icon} {label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* ── Model selector ──────────────────────────────────────────── */}
+        <div className="flex items-center gap-2 mb-4 p-1 rounded-xl"
+             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          {[
+            { model: 'factorizephys', label: 'FactorizePhys' },
+            { model: 'efficientphys', label: 'EfficientPhys' },
+          ].map(({ model, label, sub }) => {
+            const active = selectedModel === model
+            return (
+              <button
+                key={model}
+                onClick={() => setSelectedModel(model)}
+                className="flex-1 flex flex-col items-center py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200"
+                style={{
+                  background: active ? 'linear-gradient(135deg, rgba(129,140,248,0.2), rgba(6,182,212,0.15))' : 'transparent',
+                  border: active ? '1px solid rgba(129,140,248,0.45)' : '1px solid transparent',
+                  color: active ? '#c7d2fe' : 'rgba(255,255,255,0.35)',
+                }}
+              >
+                <span>{label}</span>
+              </button>
+            )
+          })}
+        </div>
+
         {/* Camera picker — only shown when backend is up and >1 camera found */}
-        {cameras.length > 0 && (
+        {inferenceMode === 'remote' && cameras.length > 0 && (
           <div className="flex items-center gap-3 mb-3 px-4 py-3 rounded-xl"
                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
             <Camera size={13} className="text-white/40 flex-shrink-0" />
@@ -123,29 +178,40 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* DroidCam / phone MJPEG stream input */}
-        <div className="flex items-center gap-3 mb-6 px-4 py-3 rounded-xl"
-             style={{
-               background: cameraUrl ? 'rgba(6,182,212,0.06)' : 'rgba(255,255,255,0.04)',
-               border: `1px solid ${cameraUrl ? 'rgba(6,182,212,0.35)' : 'rgba(255,255,255,0.08)'}`,
-             }}>
-          <Smartphone size={13} className="text-white/40 flex-shrink-0" />
-          <input
-            type="text"
-            placeholder="192.168.x.x:4747"
-            value={phoneIpDisplay}
-            onChange={handlePhoneIpChange}
-            className="text-xs rounded-lg px-3 py-1.5 text-white/80 outline-none"
-            style={{
-              background: 'rgba(255,255,255,0.06)',
-              border: `1px solid ${cameraUrl ? 'rgba(6,182,212,0.4)' : 'rgba(255,255,255,0.1)'}`,
-              width: '160px',
-            }}
-          />
-          <span className="text-xs" style={{ color: cameraUrl ? '#22d3ee' : '#ffffff40' }}>
-            {cameraUrl ? `→ ${cameraUrl}` : 'DroidCam WiFi stream (leave blank for webcam)'}
-          </span>
-        </div>
+        {/* DroidCam / phone MJPEG stream input — backend mode only */}
+        {inferenceMode === 'remote' && (
+          <div className="flex items-center gap-3 mb-6 px-4 py-3 rounded-xl"
+               style={{
+                 background: cameraUrl ? 'rgba(6,182,212,0.06)' : 'rgba(255,255,255,0.04)',
+                 border: `1px solid ${cameraUrl ? 'rgba(6,182,212,0.35)' : 'rgba(255,255,255,0.08)'}`,
+               }}>
+            <Smartphone size={13} className="text-white/40 flex-shrink-0" />
+            <input
+              type="text"
+              placeholder="192.168.x.x:4747"
+              value={phoneIpDisplay}
+              onChange={handlePhoneIpChange}
+              className="text-xs rounded-lg px-3 py-1.5 text-white/80 outline-none"
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: `1px solid ${cameraUrl ? 'rgba(6,182,212,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                width: '160px',
+              }}
+            />
+            <span className="text-xs" style={{ color: cameraUrl ? '#22d3ee' : '#ffffff40' }}>
+              {cameraUrl ? `→ ${cameraUrl}` : 'DroidCam WiFi stream (leave blank for webcam)'}
+            </span>
+          </div>
+        )}
+
+        {/* On-device mode hint */}
+        {inferenceMode === 'local' && (
+          <div className="flex items-center gap-2 mb-6 px-4 py-3 rounded-xl text-xs"
+               style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.2)', color: 'rgba(6,182,212,0.8)' }}>
+            <Cpu size={13} />
+            All inference runs in your browser — no backend required. Camera access is requested on start.
+          </div>
+        )}
 
         {/* CTA */}
         <button id="start-session-btn" onClick={handleStart} className="btn-primary text-lg px-10 py-5 mb-4">

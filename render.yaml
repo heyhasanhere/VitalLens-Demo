@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: vitallens-backend
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter         # 2 GB RAM — needed for MediaPipe + ONNX
+    envVars:
+      - key: CORS_ORIGINS
+        value: "*"         # replace with your Vercel URL after first deploy
+      - key: CAMERA_INDEX
+        value: "0"

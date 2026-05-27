@@ -96,41 +96,70 @@ async def video_feed():
 
 @app.websocket("/ws/vitals")
 async def ws_vitals(
-    websocket: WebSocket,
+    websocket:     WebSocket,
     camera:        int   = Query(default=DEFAULT_CAMERA_INDEX, description="Camera device index"),
-    camera_url:    str   = Query(default=None, description="MJPEG stream URL (e.g. http://192.168.0.160:4747/video); overrides camera index"),
-    lock_exposure: float = Query(default=None, description="Fixed exposure value (e.g. -6); omit to leave auto"),
+    camera_url:    str   = Query(default=None,  description="MJPEG stream URL; overrides camera index"),
+    source:        str   = Query(default="camera", description="'camera' = local/MJPEG capture; 'browser' = client streams frames"),
+    lock_exposure: float = Query(default=None,  description="Fixed exposure value; local cameras only"),
+    model:         str   = Query(default=None,  description="'factorizephys' | 'efficientphys' — overrides server default"),
 ):
     """
-    Streams vitals JSON every ~1 s.
+    Vitals WebSocket.  Two modes:
 
-    Message schema (matches frontend useWebSocket.js):
-    {
-        "hr":           float,   // BPM (0 until first inference)
-        "br":           float,   // breaths/min
-        "hrv":          float,   // RMSSD in ms
-        "stress":       float,   // 0-100
-        "bvp":          [float], // last 32 BVP samples (normalised)
-        "lighting":     str,     // "Good" | "Mixed" | "Poor"
-        "face_detected": bool,
-        "face_bbox":    {"x":f,"y":f,"w":f,"h":f} | null,  // normalized 0-1 fractions
-        "timestamp":    float,
-        "ready":        bool     // false until first rPPG inference completes
-    }
+    camera mode  (source=camera, default):
+        Backend opens the camera (local device or MJPEG URL) and streams
+        vitals JSON to the client every ~1 s.
+
+    browser mode (source=browser):
+        Client sends raw JPEG frames as binary WebSocket messages.
+        Backend processes them and streams vitals JSON back every ~1 s.
+        Used for cloud deployments where the backend has no physical camera.
     """
     await websocket.accept()
 
-    engine = VitalsEngine(camera_index=camera, camera_url=camera_url, brightness_norm=True, lock_exposure=lock_exposure)
-    loop   = asyncio.get_event_loop()
+    engine = VitalsEngine(
+        camera_index=camera, camera_url=camera_url,
+        brightness_norm=True, lock_exposure=lock_exposure,
+        model=model,
+    )
+    loop = asyncio.get_event_loop()
 
     try:
-        await loop.run_in_executor(None, engine.start)
-        _set_active_engine(engine)
+        if source == "browser":
+            await loop.run_in_executor(None, engine.start_browser_mode)
+            _set_active_engine(engine)
 
-        while engine.is_running:
-            msg = engine.get_message()
-            await websocket.send_text(json.dumps(msg))
-            await asyncio.sleep(1.0)
+            async def _send_vitals():
+                try:
+                    while engine.is_running:
+                        await websocket.send_text(json.dumps(engine.get_message()))
+                        await asyncio.sleep(1.0)
+                except Exception:
+                    pass
+
+            send_task    = asyncio.create_task(_send_vitals())
+            process_task = None
+            try:
+                while True:
+                    data = await websocket.receive_bytes()
+                    if process_task is None or process_task.done():
+                        process_task = asyncio.ensure_future(
+                            loop.run_in_executor(None, engine.push_frame, data)
+                        )
+            except WebSocketDisconnect:
+                pass
+            except Exception as e:
+                print(f"Browser WS error: {e}")
+            finally:
+                send_task.cancel()
+
+        else:
+            await loop.run_in_executor(None, engine.start)
+            _set_active_engine(engine)
+
+            while engine.is_running:
+                await websocket.send_text(json.dumps(engine.get_message()))
+                await asyncio.sleep(1.0)
 
     except WebSocketDisconnect:
         pass

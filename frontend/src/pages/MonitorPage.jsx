@@ -185,10 +185,10 @@ export default function MonitorPage() {
     <div className="min-h-screen flex flex-col" style={{ background: '#0a0f1e' }}>
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <header className="flex items-center justify-between px-6 py-3"
+      <header className="flex items-center justify-between px-3 sm:px-6 py-3"
               style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-        <span className="font-semibold text-white/70 text-sm tracking-wide">VitalLens</span>
-        <div className="flex items-center gap-4">
+        <span className="font-semibold text-white/70 text-sm tracking-wide hidden sm:block">VitalLens</span>
+        <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto justify-between sm:justify-start">
           <HRZoneBadge hr={hr} hrZones={hrZones} />
           <span className="font-mono text-sm text-white/40">{formatTime(elapsed)}</span>
           <button

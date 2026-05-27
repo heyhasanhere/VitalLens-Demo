@@ -63,7 +63,7 @@ export default function HomePage() {
     <div className="min-h-screen flex flex-col">
 
       {/* ── Nav bar ─────────────────────────────────────────────────────── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-8 py-4"
+      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 sm:px-8 py-4"
            style={{ background: 'rgba(10,15,30,0.7)', backdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center"
@@ -96,7 +96,7 @@ export default function HomePage() {
         </div>
 
         {/* Heading */}
-        <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-4 leading-tight">
+        <h1 className="text-4xl sm:text-5xl md:text-7xl font-black tracking-tight mb-4 leading-tight">
           <span className="text-gradient">VitalLens</span>
         </h1>
         <p className="text-xl md:text-2xl font-light text-white/60 mb-4 tracking-wide">
@@ -157,7 +157,7 @@ export default function HomePage() {
         )}
 
         {/* DroidCam / phone MJPEG stream input — backend mode only */}
-        {inferenceMode === 'remote' && <div className="flex items-center gap-3 mb-3 px-4 py-3 rounded-xl"
+        {inferenceMode === 'remote' && <div className="flex items-center gap-2 sm:gap-3 mb-3 px-3 sm:px-4 py-3 rounded-xl w-full max-w-sm"
              style={{
                background: cameraUrl ? 'rgba(6,182,212,0.06)' : 'rgba(255,255,255,0.04)',
                border: `1px solid ${cameraUrl ? 'rgba(6,182,212,0.35)' : 'rgba(255,255,255,0.08)'}`,
@@ -172,11 +172,11 @@ export default function HomePage() {
             style={{
               background: 'rgba(255,255,255,0.06)',
               border: `1px solid ${cameraUrl ? 'rgba(6,182,212,0.4)' : 'rgba(255,255,255,0.1)'}`,
-              width: '160px',
+              width: '140px',
             }}
           />
-          <span className="text-xs" style={{ color: cameraUrl ? '#22d3ee' : '#ffffff40' }}>
-            {cameraUrl ? `→ ${cameraUrl}` : 'DroidCam WiFi stream (leave blank for webcam)'}
+          <span className="text-xs truncate min-w-0" style={{ color: cameraUrl ? '#22d3ee' : '#ffffff40' }}>
+            {cameraUrl ? `→ ${cameraUrl}` : <span className="hidden sm:inline">DroidCam WiFi stream (leave blank for webcam)</span>}
           </span>
         </div>}
 
@@ -188,7 +188,7 @@ export default function HomePage() {
         )}
 
         {/* Model selector */}
-        <div className="flex items-center gap-1.5 mb-6 p-1 rounded-xl"
+        <div className="flex flex-wrap justify-center gap-1.5 mb-6 p-1.5 rounded-xl"
              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
           {[
             { model: 'factorizephys',      label: 'FactorizePhys'      },

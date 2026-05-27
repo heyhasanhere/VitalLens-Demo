@@ -81,7 +81,7 @@ export default function VitalsPanel({ wsConnected }) {
   return (
     <div className="flex flex-col gap-4 h-full">
       {/* Connection status badge */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-white/50 uppercase tracking-widest">Live Vitals</h2>
         <div className="flex items-center gap-2">
           {warmupLeft > 0 && (

@@ -47,6 +47,14 @@ LIGHTING_PATH        = Path(os.environ.get("LIGHTING_MODEL_PATH",
 FACE_LANDMARKER_PATH = Path(os.environ.get("FACE_LANDMARKER_PATH",
                             str(_W / "face_landmarker.task")))
 
+MODEL_PATHS: dict[str, Path] = {
+    'factorizephys':      _W / 'factorizephys.onnx',
+    'factorizephys_ibvp': _W / 'factorizephys_ibvp.onnx',
+    'efficientphys':      _W / 'vitallens_rppg.onnx',
+    'physnet':            _W / 'physnet.onnx',
+    'physformer':         _W / 'physformer.onnx',
+}
+
 DEFAULT_CAMERA_INDEX = int(os.environ.get("CAMERA_INDEX", "0"))
 _USE_V4L2            = os.environ.get("USE_V4L2", "0").strip() == "1"
 
@@ -377,7 +385,7 @@ def preprocess_for_rppg(frames: list[np.ndarray], brightness_norm: bool = True,
 
 
 def preprocess_for_factorizephys(frames: list[np.ndarray], input_size: int = 72) -> np.ndarray:
-    """Raw RGB [0,1] preprocessing for FactorizePhys. Input: 160 frames → (1, 3, 160, H, W)."""
+    """Raw RGB [0,1] for FactorizePhys/PhysNet. Input: T frames → (1, 3, T, H, W)."""
     resized = np.array(
         [cv2.resize(cv2.cvtColor(f, cv2.COLOR_BGR2RGB), (input_size, input_size),
                     interpolation=cv2.INTER_LINEAR)
@@ -385,6 +393,19 @@ def preprocess_for_factorizephys(frames: list[np.ndarray], input_size: int = 72)
         dtype=np.float32,
     ) / 255.0                                        # (T, H, W, 3) in [0, 1]
     return resized.transpose(3, 0, 1, 2)[np.newaxis]  # (1, 3, T, H, W)
+
+
+def preprocess_for_physformer(frames: list[np.ndarray], input_size: int = 72) -> np.ndarray:
+    """Raw RGB [0,1] for PhysFormer. Input: 160 frames → (1, 3, 161, H, W).
+    Appends last frame; model internally diffs to produce 160-frame BVP."""
+    resized = np.array(
+        [cv2.resize(cv2.cvtColor(f, cv2.COLOR_BGR2RGB), (input_size, input_size),
+                    interpolation=cv2.INTER_LINEAR)
+         for f in frames],
+        dtype=np.float32,
+    ) / 255.0                                             # (T, H, W, 3) in [0, 1]
+    with_extra = np.concatenate([resized, resized[-1:]], axis=0)   # (T+1, H, W, 3)
+    return with_extra.transpose(3, 0, 1, 2)[np.newaxis]            # (1, 3, T+1, H, W)
 
 
 def preprocess_for_lighting(frame: np.ndarray) -> np.ndarray:
@@ -414,14 +435,14 @@ class VitalsEngine:
         brightness_norm: bool  = True,
         target_fps:      float = 30.0,
         lock_exposure:   float | None = None,  # e.g. -6.0; None = leave auto
-        model:           str | None = None,    # 'factorizephys' | 'efficientphys'
+        rppg_path:       Path | None = None,   # override ONNX model; defaults to RPPG_PATH
     ):
         self.camera_index    = camera_index
         self.camera_url      = camera_url
         self.brightness_norm = brightness_norm
         self.target_fps      = target_fps
         self.lock_exposure   = lock_exposure
-        self._model_override = model
+        self._rppg_path      = rppg_path or RPPG_PATH
 
         # ONNX sessions
         self._rppg_sess        = None
@@ -439,9 +460,9 @@ class VitalsEngine:
             ),
             running_mode=mp_vision.RunningMode.VIDEO,
             num_faces=1,
-            min_face_detection_confidence=0.7,
-            min_face_presence_confidence=0.7,
-            min_tracking_confidence=0.7,
+            min_face_detection_confidence=0.3,
+            min_face_presence_confidence=0.3,
+            min_tracking_confidence=0.3,
         )
         self._face_landmarker = mp_vision.FaceLandmarker.create_from_options(_fl_options)
         self._mp_timestamp_ms = 0   # monotonically increasing, required by VIDEO mode
@@ -499,9 +520,6 @@ class VitalsEngine:
         self._running  = False
         self._thread   : threading.Thread | None = None
 
-        # Browser-streaming mode: serialise push_frame calls
-        self._push_lock = threading.Lock()
-
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -511,34 +529,6 @@ class VitalsEngine:
         self._running = True
         self._thread  = threading.Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
-
-    def start_browser_mode(self) -> None:
-        """Load models and mark running. Frames are fed externally via push_frame()."""
-        self._load_models()
-        self._running = True
-        self._fps_t0  = time.time()
-
-    def push_frame(self, jpeg_bytes: bytes) -> None:
-        """Process one JPEG frame from the browser. Drops frame if still processing previous."""
-        if not self._running:
-            return
-        if not self._push_lock.acquire(blocking=False):
-            return
-        try:
-            arr   = np.frombuffer(jpeg_bytes, np.uint8)
-            frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-            if frame is None:
-                return
-            if not self._fps_calibrated:
-                self._fps_frame_count += 1
-                if self._fps_frame_count >= 90:
-                    elapsed = time.time() - self._fps_t0
-                    self.target_fps = round(self._fps_frame_count / elapsed, 2)
-                    self._fps_calibrated = True
-                    print(f"Browser stream fps: {self.target_fps:.1f} Hz")
-            self._process_frame(frame)
-        finally:
-            self._push_lock.release()
 
     def stop(self) -> None:
         self._running = False
@@ -555,36 +545,38 @@ class VitalsEngine:
 
     def _load_models(self) -> None:
         providers = ["CPUExecutionProvider"]
-        _MODELS = {
-            'factorizephys': _W / 'factorizephys.onnx',
-            'efficientphys': _W / 'vitallens_rppg.onnx',
-        }
-        rppg_path = _MODELS.get(self._model_override, RPPG_PATH) if self._model_override else RPPG_PATH
-        if not rppg_path.exists():
-            raise FileNotFoundError(f"rPPG ONNX not found: {rppg_path}")
-        self._rppg_sess  = ort.InferenceSession(str(rppg_path), providers=providers)
+        if not self._rppg_path.exists():
+            raise FileNotFoundError(f"rPPG ONNX not found: {self._rppg_path}")
+        self._rppg_sess  = ort.InferenceSession(str(self._rppg_path), providers=providers)
         self._rppg_input = self._rppg_sess.get_inputs()[0].name
 
         # Auto-detect model type from ONNX input shape:
-        #   EfficientPhys/VitalLens: (B, T, C, H, W) → dim[1] is T (e.g. 160)
-        #   FactorizePhys:           (B, C, T, H, W) → dim[1] is C (3)
+        #   EfficientPhys/VitalLens: (B, T, C, H, W) → dim[1] is T (≠ 3)
+        #   FactorizePhys / PhysNet: (B, C, T, H, W) → dim[1] = 3, dim[2] = T (even)
+        #   PhysFormer:              (B, C, T+1, H, W) → dim[1] = 3, dim[2] = T+1 (odd, e.g. 161)
         inp_shape = self._rppg_sess.get_inputs()[0].shape
-        if inp_shape[1] == 3:
-            self._model_type       = 'factorizephys'
-            self._model_clip_len   = inp_shape[2]   # T dimension
-            self._model_input_size = inp_shape[3]   # H dimension
-            # FactorizePhys needs exactly clip_len frames (no +1 for diff)
+        if inp_shape[1] != 3:
+            self._model_type       = 'efficientphys'
+            self._model_clip_len   = inp_shape[1]   # T dimension
+            self._model_input_size = inp_shape[3]
+            self._frame_buf    = deque(maxlen=self._model_clip_len + 1)
+            self._landmark_buf = deque(maxlen=self._model_clip_len + 1)
+        elif inp_shape[2] % 2 == 1:
+            # Odd T dimension → PhysFormer (T+1 frames; model diffs internally)
+            self._model_type       = 'physformer'
+            self._model_clip_len   = inp_shape[2] - 1   # true clip length (e.g. 160)
+            self._model_input_size = inp_shape[3]
             self._frame_buf    = deque(maxlen=self._model_clip_len)
             self._landmark_buf = deque(maxlen=self._model_clip_len)
         else:
-            self._model_type       = 'efficientphys'
-            self._model_clip_len   = inp_shape[1]   # T dimension
-            self._model_input_size = inp_shape[3]   # H dimension
-            # EfficientPhys needs clip_len+1 frames to produce clip_len diffs
-            self._frame_buf    = deque(maxlen=self._model_clip_len + 1)
-            self._landmark_buf = deque(maxlen=self._model_clip_len + 1)
+            # FactorizePhys or PhysNet: exact T frames, raw RGB
+            self._model_type       = 'factorizephys'
+            self._model_clip_len   = inp_shape[2]
+            self._model_input_size = inp_shape[3]
+            self._frame_buf    = deque(maxlen=self._model_clip_len)
+            self._landmark_buf = deque(maxlen=self._model_clip_len)
 
-        print(f"Model: {self._model_type}  clip={self._model_clip_len}  size={self._model_input_size}")
+        print(f"Model: {self._model_type}  clip={self._model_clip_len}  size={self._model_input_size}  path={self._rppg_path.name}")
 
         if LIGHTING_PATH.exists():
             self._lighting_sess  = ort.InferenceSession(str(LIGHTING_PATH), providers=providers)
@@ -737,11 +729,11 @@ class VitalsEngine:
                 bgr_mean = raw_crop.reshape(-1, 3).mean(axis=0)
                 self._rgb_buf.append(bgr_mean[[2, 1, 0]])  # BGR → RGB
 
-        # 6. Run rPPG inference every INFERENCE_STRIDE frames (once buffer is full)
-        required = self._model_clip_len if self._model_type == 'factorizephys' else self._model_clip_len + 1
+        # 6. Run rPPG inference aligned to model clip boundaries (once buffer is full)
+        required = self._model_clip_len + 1 if self._model_type == 'efficientphys' else self._model_clip_len
         if (detected and
                 len(self._frame_buf) == required and
-                self._frame_count % INFERENCE_STRIDE == 0):
+                self._frame_count % self._model_clip_len == 0):
             self._run_rppg()
 
         # 7. Update shared state
@@ -822,6 +814,8 @@ class VitalsEngine:
 
         if self._model_type == 'factorizephys':
             clip = preprocess_for_factorizephys(frames, self._model_input_size)
+        elif self._model_type == 'physformer':
+            clip = preprocess_for_physformer(frames, self._model_input_size)
         else:
             frames = _stabilise_clip(frames, landmarks)
             clip   = preprocess_for_rppg(frames, self.brightness_norm, self._model_input_size)
@@ -961,23 +955,22 @@ class VitalsEngine:
         lum_buf = list(self._lum_buf)
         lum_std = round(float(np.std(lum_buf)), 2) if len(lum_buf) >= 10 else None
         with self._lock:
-            fd = self._face_detected
             return {
-                "hr":            self._hr  if fd else None,
-                "br":            self._br  if fd else None,
-                "hrv":           self._hrv if fd else None,
-                "stress":        self._stress   if fd else None,
-                "snr":           self._snr      if fd else None,
-                "pos_hr":        self._pos_hr   if fd else None,
-                "chrom_hr":      self._chrom_hr if fd else None,
-                "bvp":           list(self._bvp_window) if fd else [],
+                "hr":            self._hr,
+                "br":            self._br,
+                "hrv":           self._hrv,
+                "stress":        self._stress,
+                "snr":           self._snr,
+                "pos_hr":        self._pos_hr,
+                "chrom_hr":      self._chrom_hr,
+                "bvp":           list(self._bvp_window),
                 "lighting":      self._lighting,
-                "face_detected": fd,
+                "face_detected": self._face_detected,
                 "face_bbox":     self._face_bbox,
                 "timestamp":     time.time(),
                 "ready":         self._ready,
                 "lum_std":       lum_std,
-                "blink_rate":    self._blink_rate if fd else None,
-                "sway":          self._sway   if fd else None,
-                "rhythm":        self._rhythm if fd else "Unknown",
+                "blink_rate":    self._blink_rate,
+                "sway":          self._sway,
+                "rhythm":        self._rhythm,
             }

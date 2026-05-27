@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import useVitalsStore from '../store/useVitalsStore'
 import { WS_BASE } from '../config'
 
@@ -14,7 +14,7 @@ export function useWebSocket(enabled = true) {
   useEffect(() => {
     let active = true
 
-    if (!enabled) {
+    if (!enabled || cameraIndex === null) {
       if (wsRef.current) {
         wsRef.current.close()
         wsRef.current = null
@@ -31,15 +31,8 @@ export function useWebSocket(enabled = true) {
       setWsConnected(null)
 
       try {
-        const params = new URLSearchParams()
-        if (cameraUrl) {
-          // DroidCam / MJPEG mode: backend opens the stream URL
-          params.set('camera_url', cameraUrl)
-        } else {
-          // Browser mode: frontend sends JPEG frames over the socket
-          params.set('source', 'browser')
-          if (cameraIndex !== null) params.set('camera', cameraIndex)
-        }
+        const params = new URLSearchParams({ camera: cameraIndex })
+        if (cameraUrl) params.set('camera_url', cameraUrl)
         if (selectedModel) params.set('model', selectedModel)
         ws = new WebSocket(`${WS_BASE}/ws/vitals?${params}`)
         wsRef.current = ws
@@ -81,11 +74,4 @@ export function useWebSocket(enabled = true) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, cameraIndex, cameraUrl, selectedModel])
-
-  const sendFrame = useCallback((blob) => {
-    const ws = wsRef.current
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(blob)
-  }, [])
-
-  return { sendFrame }
 }

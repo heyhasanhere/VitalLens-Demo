@@ -39,9 +39,8 @@ const useVitalsStore = create((set, get) => ({
   lightingBannerDismissed: false,
   consecutivePoorFrames: 0,
   wsConnected: null,   // null=connecting, true=live, false=dropped
-  cameraIndex: 0,
+  cameraIndex: null,
   cameraUrl: '',
-  inferenceMode: localStorage.getItem('vl_inference_mode') || 'remote',  // 'local' | 'remote'
   selectedModel: localStorage.getItem('vl_model') || 'factorizephys',
   hrZones: null,   // { age: int, hr_zones: { "1": [lo,hi], ... } } — set once per session
 
@@ -127,22 +126,19 @@ const useVitalsStore = create((set, get) => ({
     const warmupDone = !state.session.startTime ||
       (Date.now() - state.session.startTime >= WARMUP_MS)
 
-    // Clear rPPG metrics when face is explicitly absent — stale values are misleading.
-    const noFace = face_detected === false
-
     return {
       vitals: {
-        hr:            noFace ? null : warmupDone ? (hr     ?? prev.hr)     : prev.hr,
-        br:            noFace ? null : warmupDone ? (br     ?? prev.br)     : prev.br,
-        hrv:           noFace ? null : warmupDone ? (hrv    ?? prev.hrv)    : prev.hrv,
-        stress:        noFace ? null : warmupDone ? (stress ?? prev.stress) : prev.stress,
-        posHr:         noFace ? null : warmupDone ? (pos_hr   ?? prev.posHr)   : prev.posHr,
-        chromHr:       noFace ? null : warmupDone ? (chrom_hr ?? prev.chromHr) : prev.chromHr,
-        bvpWindow:     noFace ? [] : newBvp,
+        hr:            warmupDone ? (hr     ?? prev.hr)     : prev.hr,
+        br:            warmupDone ? (br     ?? prev.br)     : prev.br,
+        hrv:           warmupDone ? (hrv    ?? prev.hrv)    : prev.hrv,
+        stress:        warmupDone ? (stress ?? prev.stress) : prev.stress,
+        posHr:         warmupDone ? (pos_hr   ?? prev.posHr)   : prev.posHr,
+        chromHr:       warmupDone ? (chrom_hr ?? prev.chromHr) : prev.chromHr,
+        bvpWindow:     newBvp,
         lighting:      lighting      ?? prev.lighting,
         faceDetected:  face_detected ?? prev.faceDetected,
         faceBbox:      face_bbox     ?? prev.faceBbox,
-        snr:           noFace ? null : (snr ?? prev.snr),
+        snr:           snr           ?? prev.snr,
         prevHr:        prev.hr,
         prevBr:        prev.br,
         prevHrv:       prev.hrv,
@@ -171,11 +167,7 @@ const useVitalsStore = create((set, get) => ({
   setWsConnected: (val) => set({ wsConnected: val }),
   setCameraIndex: (idx) => set({ cameraIndex: idx }),
   setCameraUrl:   (url) => set({ cameraUrl: url }),
-  setHrZones:      (data) => set({ hrZones: data }),
-  setInferenceMode: (mode) => {
-    localStorage.setItem('vl_inference_mode', mode)
-    set({ inferenceMode: mode })
-  },
+  setHrZones:     (data) => set({ hrZones: data }),
   setSelectedModel: (model) => {
     localStorage.setItem('vl_model', model)
     set({ selectedModel: model })

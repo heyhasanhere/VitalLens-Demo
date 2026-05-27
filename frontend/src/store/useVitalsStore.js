@@ -41,6 +41,7 @@ const useVitalsStore = create((set, get) => ({
   wsConnected: null,   // null=connecting, true=live, false=dropped
   cameraIndex: null,
   cameraUrl: '',
+  inferenceMode: localStorage.getItem('vl_inference_mode') || 'remote',  // 'local' | 'remote'
   selectedModel: localStorage.getItem('vl_model') || 'factorizephys',
   hrZones: null,   // { age: int, hr_zones: { "1": [lo,hi], ... } } — set once per session
 
@@ -168,6 +169,10 @@ const useVitalsStore = create((set, get) => ({
   setCameraIndex: (idx) => set({ cameraIndex: idx }),
   setCameraUrl:   (url) => set({ cameraUrl: url }),
   setHrZones:     (data) => set({ hrZones: data }),
+  setInferenceMode: (mode) => {
+    localStorage.setItem('vl_inference_mode', mode)
+    set({ inferenceMode: mode })
+  },
   setSelectedModel: (model) => {
     localStorage.setItem('vl_model', model)
     set({ selectedModel: model })

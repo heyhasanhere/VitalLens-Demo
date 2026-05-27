@@ -1,6 +1,6 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Camera, Heart, Brain, Lock, Wind, Activity, Gauge, Smartphone, Play, Cpu } from 'lucide-react'
+import { Camera, Heart, Brain, Lock, Wind, Activity, Gauge, Smartphone, Play, Cpu, Server } from 'lucide-react'
 import useVitalsStore from '../store/useVitalsStore'
 import { API_BASE } from '../config'
 
@@ -29,6 +29,16 @@ export default function HomePage() {
   const setCameraUrl     = useVitalsStore(s => s.setCameraUrl)
   const selectedModel    = useVitalsStore(s => s.selectedModel)
   const setSelectedModel = useVitalsStore(s => s.setSelectedModel)
+  const inferenceMode    = useVitalsStore(s => s.inferenceMode)
+  const setInferenceMode = useVitalsStore(s => s.setInferenceMode)
+
+  const LOCAL_MODELS = new Set(['factorizephys', 'efficientphys'])
+  const handleSetInferenceMode = (mode) => {
+    setInferenceMode(mode)
+    if (mode === 'local' && !LOCAL_MODELS.has(selectedModel)) {
+      setSelectedModel('factorizephys')
+    }
+  }
   const [cameras, setCameras] = React.useState([])
 
   // Display value is IP:port without the http:// prefix and /video suffix
@@ -104,8 +114,33 @@ export default function HomePage() {
           Sit in front of your camera and let AI do the rest.
         </p>
 
-        {/* Camera picker — only shown when backend is up and >1 camera found */}
-        {cameras.length > 0 && (
+        {/* Inference mode toggle */}
+        <div className="flex items-center gap-1.5 mb-3 p-1 rounded-xl"
+             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          {[
+            { mode: 'remote', label: 'Backend',   Icon: Server },
+            { mode: 'local',  label: 'On-Device',  Icon: Cpu   },
+          ].map(({ mode, label, Icon }) => {
+            const active = inferenceMode === mode
+            return (
+              <button
+                key={mode}
+                onClick={() => handleSetInferenceMode(mode)}
+                className="flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg text-xs font-semibold transition-all duration-200"
+                style={{
+                  background: active ? 'linear-gradient(135deg, rgba(6,182,212,0.2), rgba(129,140,248,0.15))' : 'transparent',
+                  border: active ? '1px solid rgba(6,182,212,0.45)' : '1px solid transparent',
+                  color: active ? '#22d3ee' : 'rgba(255,255,255,0.35)',
+                }}
+              >
+                <Icon size={11} />{label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Camera picker — only shown in backend mode when backend is up and >1 camera found */}
+        {inferenceMode === 'remote' && cameras.length > 0 && (
           <div className="flex items-center gap-3 mb-3 px-4 py-3 rounded-xl"
                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
             <Camera size={13} className="text-white/40 flex-shrink-0" />
@@ -125,8 +160,8 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* DroidCam / phone MJPEG stream input */}
-        <div className="flex items-center gap-3 mb-6 px-4 py-3 rounded-xl"
+        {/* DroidCam / phone MJPEG stream input — backend mode only */}
+        {inferenceMode === 'remote' && <div className="flex items-center gap-3 mb-3 px-4 py-3 rounded-xl"
              style={{
                background: cameraUrl ? 'rgba(6,182,212,0.06)' : 'rgba(255,255,255,0.04)',
                border: `1px solid ${cameraUrl ? 'rgba(6,182,212,0.35)' : 'rgba(255,255,255,0.08)'}`,
@@ -147,18 +182,26 @@ export default function HomePage() {
           <span className="text-xs" style={{ color: cameraUrl ? '#22d3ee' : '#ffffff40' }}>
             {cameraUrl ? `→ ${cameraUrl}` : 'DroidCam WiFi stream (leave blank for webcam)'}
           </span>
-        </div>
+        </div>}
+
+        {/* On-device hint */}
+        {inferenceMode === 'local' && (
+          <p className="text-xs text-white/35 mb-3 text-center max-w-sm leading-relaxed">
+            Inference runs in-browser via ONNX Runtime Web. No video leaves your device.
+          </p>
+        )}
 
         {/* Model selector */}
         <div className="flex items-center gap-1.5 mb-6 p-1 rounded-xl"
              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
           {[
-            { model: 'factorizephys',      label: 'FactorizePhys'      },
-            { model: 'factorizephys_ibvp', label: 'FactorizePhys-iBVP' },
-            { model: 'efficientphys',      label: 'EfficientPhys'      },
-            { model: 'physnet',            label: 'PhysNet'            },
-            { model: 'physformer',         label: 'PhysFormer'         },
-          ].map(({ model, label }) => {
+            { model: 'factorizephys',      label: 'FactorizePhys',      remoteOnly: false },
+            { model: 'factorizephys_ibvp', label: 'FactorizePhys-iBVP', remoteOnly: true  },
+            { model: 'efficientphys',      label: 'EfficientPhys',      remoteOnly: false },
+            { model: 'physnet',            label: 'PhysNet',            remoteOnly: true  },
+            { model: 'physformer',         label: 'PhysFormer',         remoteOnly: true  },
+          ].filter(m => inferenceMode === 'remote' || !m.remoteOnly)
+          .map(({ model, label }) => {
             const active = selectedModel === model
             return (
               <button

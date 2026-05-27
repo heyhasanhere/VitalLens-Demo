@@ -1,0 +1,3 @@
+[submodule "research/factorizephys/external/FactorizePhys"]
+	path = research/factorizephys/external/FactorizePhys
+	url = https://github.com/PhysiologicAILab/FactorizePhys.git

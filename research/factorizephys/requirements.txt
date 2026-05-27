@@ -1,0 +1,37 @@
+# FactorizePhys rPPG model training
+#
+# PyTorch — CPU build below; for GPU replace with the CUDA wheel:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#   pip install onnxruntime-gpu>=1.18.0
+torch>=2.2.0
+torchvision>=0.17.0
+
+# Data I/O
+numpy==1.26.4
+h5py>=3.8.0
+av                      # PyAV — video decoding for MCD dataset
+opencv-python>=4.9.0
+pandas>=2.0.0
+scipy>=1.13.0
+mat73>=0.62             # .mat file loading (UBFC, PURE)
+
+# FactorizePhys model dependencies (external/FactorizePhys)
+yacs>=0.1.8
+PyYAML>=6.0.1
+scikit-image>=0.22.0
+scikit-learn>=1.4.0
+retina-face>=0.0.14
+tensorboard>=2.15.0
+tqdm>=4.65.0
+
+# ONNX export + validation (export_onnx.py)
+onnx>=1.16.0
+onnxruntime>=1.18.0
+
+# Notebooks
+matplotlib>=3.9.0
+ipykernel>=6.29.0
+ipywidgets>=8.1.0
+
+# Experiment tracking (optional — training scripts skip silently if not installed)
+# clearml>=1.16.0

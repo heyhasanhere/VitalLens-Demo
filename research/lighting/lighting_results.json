@@ -1,0 +1,5 @@
+{
+  "best_val_acc": 0.9711111111111111,
+  "total_epochs": 9,
+  "device": "cpu"
+}

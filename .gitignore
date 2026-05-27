@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+
+# Environments
+.env
+.venv
+env/
+venv/
+vitallens_env/
+
+# Frontend - temporary till experiments are done
+
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data — never commit raw datasets or generated frames
+research/*/data/ubfc_rppg/
+research/*/data/pure/
+research/*/data/mmpd/
+research/*/data/synthetic_frames/
+research/*/data/*.zip
+research/*/data/*.tar.gz
+research/*/data/clips_raw/
+research/*/data/ScampsTrainTestSplit.csv
+
+# Trained model weights — checkpoint binaries from research/ are not tracked
+research/**/*.pt
+research/**/*.pth
+research/**/checkpoints/
+
+# Training-side ONNX exports (research/) are not tracked; weights/ ONNX files are tracked
+research/**/*.onnx
+research/**/*.onnx.data
+
+# Generated analysis outputs
+results_ubfc.csv
+analysis_output.csv
+viz_output/
+
+# Personal recording data
+*.xlsx
+
+# W&B
+wandb/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+CODEBASE.md
+
+# Images
+*.jpg
+*.jpeg
+*.png
+
+# misc files
+demo_gui.py

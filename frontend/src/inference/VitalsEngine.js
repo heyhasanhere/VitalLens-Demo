@@ -7,16 +7,42 @@ const MODEL_CONFIGS = {
   factorizephys: {
     path:      '/models/factorizephys.onnx',
     inputName: 'video_clip',
+    type:      'factorizephys',
     clipLen:   160,
     inputSize: 72,
-    bufferLen: 160,   // needs exactly clipLen frames
+    bufferLen: 160,
+  },
+  factorizephys_ibvp: {
+    path:      '/models/factorizephys_ibvp.onnx',
+    inputName: 'video_clip',
+    type:      'factorizephys',
+    clipLen:   160,
+    inputSize: 72,
+    bufferLen: 160,
   },
   efficientphys: {
     path:      '/models/vitallens_rppg.onnx',
     inputName: 'video_clip_TCWH',
+    type:      'efficientphys',
     clipLen:   160,
     inputSize: 128,
     bufferLen: 161,   // needs clipLen+1 frames (161 → 160 diffs)
+  },
+  physnet: {
+    path:      '/models/physnet.onnx',
+    inputName: 'video_clip',
+    type:      'factorizephys',   // same raw RGB (B,3,T,H,W) preprocessing
+    clipLen:   128,
+    inputSize: 72,
+    bufferLen: 128,
+  },
+  physformer: {
+    path:      '/models/physformer.onnx',
+    inputName: 'video_clip',
+    type:      'physformer',
+    clipLen:   160,
+    inputSize: 72,
+    bufferLen: 160,   // collect 160, append last frame → 161 input to model
   },
 }
 
@@ -225,13 +251,18 @@ export class VitalsEngine {
     const { clipLen: T, inputSize: S, inputName } = this._cfg
 
     let tensorData, shape
-    if (inputName === 'video_clip') {
-      // FactorizePhys: use last clipLen frames
+    if (this._cfg.type === 'physformer') {
+      // Append last frame to get T+1=161; model internally diffs → T=160
+      const clip = frames.slice(-T)
+      ;({ data: tensorData, shape } = buildTensorFactorizephys(
+        [...clip, clip[clip.length - 1]], T + 1, S, S))
+    } else if (this._cfg.type === 'efficientphys') {
+      // DiffNorm: all bufferLen (T+1) frames → T diffs
+      ;({ data: tensorData, shape } = buildTensorEfficientphys(frames, T, S, S))
+    } else {
+      // factorizephys / physnet / factorizephys_ibvp: raw RGB (B,3,T,H,W)
       const clip = frames.slice(-T)
       ;({ data: tensorData, shape } = buildTensorFactorizephys(clip, T, S, S))
-    } else {
-      // EfficientPhys: use all bufferLen frames (T+1 → T diffs)
-      ;({ data: tensorData, shape } = buildTensorEfficientphys(frames, T, S, S))
     }
 
     const tensor = new ort.Tensor('float32', tensorData, shape)

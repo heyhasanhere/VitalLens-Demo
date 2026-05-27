@@ -32,12 +32,8 @@ export default function HomePage() {
   const inferenceMode    = useVitalsStore(s => s.inferenceMode)
   const setInferenceMode = useVitalsStore(s => s.setInferenceMode)
 
-  const LOCAL_MODELS = new Set(['factorizephys', 'efficientphys'])
   const handleSetInferenceMode = (mode) => {
     setInferenceMode(mode)
-    if (mode === 'local' && !LOCAL_MODELS.has(selectedModel)) {
-      setSelectedModel('factorizephys')
-    }
   }
   const [cameras, setCameras] = React.useState([])
 
@@ -195,13 +191,12 @@ export default function HomePage() {
         <div className="flex items-center gap-1.5 mb-6 p-1 rounded-xl"
              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
           {[
-            { model: 'factorizephys',      label: 'FactorizePhys',      remoteOnly: false },
-            { model: 'factorizephys_ibvp', label: 'FactorizePhys-iBVP', remoteOnly: true  },
-            { model: 'efficientphys',      label: 'EfficientPhys',      remoteOnly: false },
-            { model: 'physnet',            label: 'PhysNet',            remoteOnly: true  },
-            { model: 'physformer',         label: 'PhysFormer',         remoteOnly: true  },
-          ].filter(m => inferenceMode === 'remote' || !m.remoteOnly)
-          .map(({ model, label }) => {
+            { model: 'factorizephys',      label: 'FactorizePhys'      },
+            { model: 'factorizephys_ibvp', label: 'FactorizePhys-iBVP' },
+            { model: 'efficientphys',      label: 'EfficientPhys'      },
+            { model: 'physnet',            label: 'PhysNet'            },
+            { model: 'physformer',         label: 'PhysFormer'         },
+          ].map(({ model, label }) => {
             const active = selectedModel === model
             return (
               <button

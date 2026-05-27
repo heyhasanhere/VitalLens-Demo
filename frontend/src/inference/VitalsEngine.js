@@ -223,8 +223,22 @@ export class VitalsEngine {
       face = _imageDataToRGB(imgData)
     }
 
-    this._frameBuffer.push(face)
-    if (this._frameBuffer.length > this._cfg.bufferLen) this._frameBuffer.shift()
+    if (faceDetected) {
+      this._frameBuffer.push(face)
+      if (this._frameBuffer.length > this._cfg.bufferLen) this._frameBuffer.shift()
+      this._consecutiveNoFace = 0
+    } else {
+      this._consecutiveNoFace = (this._consecutiveNoFace || 0) + 1
+      if (this._consecutiveNoFace >= 20) {  // ~1 s at 20 fps processing
+        this._frameBuffer = []
+        this._bvpBuffer   = []
+        this._hrvBuffer   = []
+        this._state.hr = 0; this._state.br = 0
+        this._state.hrv = 0; this._state.stress = 0
+        this._state.snr = 0; this._state.bvp = new Array(32).fill(0)
+        this._state.ready = false
+      }
+    }
 
     this._frameCount++
 

@@ -515,6 +515,7 @@ class VitalsEngine:
         self._blink_rate         = 0.0   # blinks/min
         self._sway            = 0.0   # normalised motion magnitude
         self._rhythm          = "Unknown"  # "Regular" / "Irregular" / "Unknown"
+        self._consecutive_no_face = 0
 
         # Thread control
         self._running  = False
@@ -743,6 +744,22 @@ class VitalsEngine:
             self._face_detected = detected
             self._face_bbox     = bbox
 
+        # 8. Reset metrics and clear signal buffers after sustained face absence
+        if not detected:
+            self._consecutive_no_face += 1
+            if self._consecutive_no_face >= 30:  # ~1 s at 30 fps
+                self._bvp_buf.clear()
+                self._hrv_buf.clear()
+                self._rgb_buf.clear()
+                self._frame_buf.clear()
+                with self._lock:
+                    self._hr = self._br = self._hrv = self._stress = 0.0
+                    self._snr = self._pos_hr = self._chrom_hr = 0.0
+                    self._bvp_window = [0.0] * 32
+                    self._ready = False
+        else:
+            self._consecutive_no_face = 0
+
     def _run_lighting(self, frame: np.ndarray) -> str:
         if self._lighting_sess is None:
             return "Good"
@@ -955,20 +972,21 @@ class VitalsEngine:
         lum_buf = list(self._lum_buf)
         lum_std = round(float(np.std(lum_buf)), 2) if len(lum_buf) >= 10 else None
         with self._lock:
+            face = self._face_detected
             return {
-                "hr":            self._hr,
-                "br":            self._br,
-                "hrv":           self._hrv,
-                "stress":        self._stress,
-                "snr":           self._snr,
-                "pos_hr":        self._pos_hr,
-                "chrom_hr":      self._chrom_hr,
-                "bvp":           list(self._bvp_window),
+                "hr":            self._hr    if face else None,
+                "br":            self._br    if face else None,
+                "hrv":           self._hrv   if face else None,
+                "stress":        self._stress if face else None,
+                "snr":           self._snr   if face else None,
+                "pos_hr":        self._pos_hr   if face else None,
+                "chrom_hr":      self._chrom_hr if face else None,
+                "bvp":           list(self._bvp_window) if face else [],
                 "lighting":      self._lighting,
-                "face_detected": self._face_detected,
+                "face_detected": face,
                 "face_bbox":     self._face_bbox,
                 "timestamp":     time.time(),
-                "ready":         self._ready,
+                "ready":         self._ready and face,
                 "lum_std":       lum_std,
                 "blink_rate":    self._blink_rate,
                 "sway":          self._sway,

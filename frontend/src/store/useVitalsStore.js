@@ -120,7 +120,8 @@ const useVitalsStore = create((set, get) => ({
     } = reading
     const prev = state.vitals
 
-    const newBvp     = [...(prev.bvpWindow || []), ...(bvp || [])].slice(-320)
+    const noFace     = face_detected === false
+    const newBvp     = noFace ? [] : [...(prev.bvpWindow || []), ...(bvp || [])].slice(-320)
     const poorFrames = lighting === 'Poor' ? state.consecutivePoorFrames + 1 : 0
 
     // Suppress rPPG-derived metrics for the first WARMUP_MS of each session.
@@ -129,17 +130,17 @@ const useVitalsStore = create((set, get) => ({
 
     return {
       vitals: {
-        hr:            warmupDone ? (hr     ?? prev.hr)     : prev.hr,
-        br:            warmupDone ? (br     ?? prev.br)     : prev.br,
-        hrv:           warmupDone ? (hrv    ?? prev.hrv)    : prev.hrv,
-        stress:        warmupDone ? (stress ?? prev.stress) : prev.stress,
-        posHr:         warmupDone ? (pos_hr   ?? prev.posHr)   : prev.posHr,
-        chromHr:       warmupDone ? (chrom_hr ?? prev.chromHr) : prev.chromHr,
+        hr:            noFace ? null : (warmupDone ? (hr     ?? prev.hr)     : prev.hr),
+        br:            noFace ? null : (warmupDone ? (br     ?? prev.br)     : prev.br),
+        hrv:           noFace ? null : (warmupDone ? (hrv    ?? prev.hrv)    : prev.hrv),
+        stress:        noFace ? null : (warmupDone ? (stress ?? prev.stress) : prev.stress),
+        posHr:         noFace ? null : (warmupDone ? (pos_hr   ?? prev.posHr)   : prev.posHr),
+        chromHr:       noFace ? null : (warmupDone ? (chrom_hr ?? prev.chromHr) : prev.chromHr),
         bvpWindow:     newBvp,
         lighting:      lighting      ?? prev.lighting,
         faceDetected:  face_detected ?? prev.faceDetected,
         faceBbox:      face_bbox     ?? prev.faceBbox,
-        snr:           snr           ?? prev.snr,
+        snr:           noFace ? null : (snr ?? prev.snr),
         prevHr:        prev.hr,
         prevBr:        prev.br,
         prevHrv:       prev.hrv,
